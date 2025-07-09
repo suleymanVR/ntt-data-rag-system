@@ -1,426 +1,320 @@
 """
-Test suite for utility modules.
+Comprehensive tests for utility modules (health_monitor and logger).
+Tests the real API methods and functionality.
 """
 
 import pytest
-import sys
-import os
+import time
 import tempfile
-import json
-from pathlib import Path
-from unittest.mock import patch, Mock, mock_open
 import logging
-from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock
 
-# Add the src directory to the Python path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from src.utils.logger import get_logger, setup_logging
-from src.utils.health_monitor import HealthMonitor, ServiceStatus
-
-
-class TestLogger:
-    """Test logging utility functions."""
-    
-    def test_get_logger_basic(self):
-        """Test basic logger creation."""
-        logger = get_logger("test_module")
-        
-        assert logger is not None
-        assert logger.name == "test_module"
-        assert isinstance(logger, logging.Logger)
-        
-    def test_get_logger_with_level(self):
-        """Test logger creation with specific level."""
-        logger = get_logger("test_module", level=logging.DEBUG)
-        
-        assert logger.level == logging.DEBUG
-        
-    def test_get_logger_singleton_behavior(self):
-        """Test that loggers with same name return same instance."""
-        logger1 = get_logger("same_module")
-        logger2 = get_logger("same_module")
-        
-        assert logger1 is logger2
-        
-    def test_setup_logging_with_file(self):
-        """Test logging setup with file output."""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False) as f:
-            log_file_path = f.name
-            
-        try:
-            setup_logging(log_file=log_file_path, log_level="DEBUG")
-            
-            # Test that log file is created and writable
-            logger = get_logger("test_file_logging")
-            logger.info("Test log message")
-            
-            # Check if log file exists and has content
-            assert os.path.exists(log_file_path)
-            
-            with open(log_file_path, 'r') as f:
-                log_content = f.read()
-                assert "Test log message" in log_content
-                
-        finally:
-            if os.path.exists(log_file_path):
-                os.unlink(log_file_path)
-                
-    def test_setup_logging_console_only(self):
-        """Test logging setup for console only."""
-        setup_logging(log_level="INFO")
-        
-        logger = get_logger("test_console_logging")
-        
-        # Should not raise any errors
-        logger.info("Console test message")
-        logger.warning("Console warning message")
-        logger.error("Console error message")
-        
-    def test_log_level_configuration(self):
-        """Test different log level configurations."""
-        levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        
-        for level_str in levels:
-            setup_logging(log_level=level_str)
-            logger = get_logger(f"test_{level_str.lower()}")
-            
-            # Verify logger level is set correctly
-            expected_level = getattr(logging, level_str)
-            # Note: The actual test might vary based on implementation
-            
-    def test_logging_with_structured_data(self):
-        """Test logging with structured data (JSON)."""
-        logger = get_logger("test_structured")
-        
-        # Test logging with extra fields
-        extra_data = {
-            "user_id": "user123",
-            "request_id": "req456",
-            "operation": "query_processing"
-        }
-        
-        # This test depends on implementation details
-        # logger.info("Processing query", extra=extra_data)
-        
-    def test_error_logging_with_traceback(self):
-        """Test error logging with exception traceback."""
-        logger = get_logger("test_error")
-        
-        try:
-            # Intentionally cause an error
-            result = 1 / 0
-        except ZeroDivisionError:
-            # Should not raise any errors
-            logger.exception("Division by zero error occurred")
-            
-    def test_log_rotation_configuration(self):
-        """Test log rotation configuration (if implemented)."""
-        # This would test rotating file handler configuration
-        # Implementation depends on specific logging setup
-        pass
+from src.utils.health_monitor import HealthMonitor
+from src.utils.logger import (
+    setup_logging, get_logger, LoggerMixin, 
+    StructuredLogger, PerformanceLogger, ErrorTracker
+)
 
 
 class TestHealthMonitor:
-    """Test health monitoring functionality."""
+    """Test HealthMonitor functionality."""
     
-    @pytest.fixture
-    def health_monitor(self):
-        """Create HealthMonitor instance for testing."""
-        return HealthMonitor()
-        
-    def test_health_monitor_initialization(self, health_monitor):
+    def setup_method(self):
+        """Set up test health monitor."""
+        self.monitor = HealthMonitor(max_history=10)
+    
+    def test_health_monitor_initialization(self):
         """Test HealthMonitor initialization."""
-        assert health_monitor is not None
-        assert hasattr(health_monitor, 'check_health')
-        assert hasattr(health_monitor, 'get_system_info')
-        
-    @pytest.mark.asyncio
-    async def test_basic_health_check(self, health_monitor):
-        """Test basic health check functionality."""
-        health_status = await health_monitor.check_health()
-        
-        assert health_status is not None
-        assert "status" in health_status
-        assert "timestamp" in health_status
-        assert "checks" in health_status
-        
-        # Basic health should be healthy
-        assert health_status["status"] in ["healthy", "degraded", "unhealthy"]
-        
-    @pytest.mark.asyncio
-    async def test_azure_openai_health_check(self, health_monitor):
-        """Test Azure OpenAI service health check."""
-        with patch('src.utils.health_monitor.get_azure_client') as mock_get_client:
-            mock_client = Mock()
-            mock_client.models.list.return_value = Mock()
-            mock_get_client.return_value = mock_client
-            
-            health_status = await health_monitor.check_azure_openai_health()
-            
-            assert health_status is not None
-            assert health_status.service == "azure_openai"
-            assert health_status.status in ["healthy", "unhealthy"]
-            
-    @pytest.mark.asyncio
-    async def test_azure_openai_health_check_failure(self, health_monitor):
-        """Test Azure OpenAI health check failure scenario."""
-        with patch('src.utils.health_monitor.get_azure_client') as mock_get_client:
-            mock_client = Mock()
-            mock_client.models.list.side_effect = Exception("Connection failed")
-            mock_get_client.return_value = mock_client
-            
-            health_status = await health_monitor.check_azure_openai_health()
-            
-            assert health_status.status == "unhealthy"
-            assert health_status.error is not None
-            
-    @pytest.mark.asyncio
-    async def test_qdrant_health_check(self, health_monitor):
-        """Test Qdrant service health check."""
-        with patch('src.utils.health_monitor.QdrantClient') as mock_qdrant:
-            mock_client = Mock()
-            mock_client.get_collections.return_value = Mock()
-            mock_qdrant.return_value = mock_client
-            
-            health_status = await health_monitor.check_qdrant_health()
-            
-            assert health_status is not None
-            assert health_status.service == "qdrant"
-            assert health_status.status in ["healthy", "unhealthy"]
-            
-    @pytest.mark.asyncio
-    async def test_qdrant_health_check_failure(self, health_monitor):
-        """Test Qdrant health check failure scenario."""
-        with patch('src.utils.health_monitor.QdrantClient') as mock_qdrant:
-            mock_client = Mock()
-            mock_client.get_collections.side_effect = Exception("Qdrant unreachable")
-            mock_qdrant.return_value = mock_client
-            
-            health_status = await health_monitor.check_qdrant_health()
-            
-            assert health_status.status == "unhealthy"
-            assert health_status.error is not None
-            
-    def test_get_system_info(self, health_monitor):
-        """Test system information gathering."""
-        system_info = health_monitor.get_system_info()
-        
-        assert system_info is not None
-        assert "python_version" in system_info
-        assert "platform" in system_info
-        assert "memory_usage" in system_info
-        assert "disk_usage" in system_info
-        
-        # Verify data types
-        assert isinstance(system_info["python_version"], str)
-        assert isinstance(system_info["platform"], str)
-        
-    def test_memory_usage_monitoring(self, health_monitor):
-        """Test memory usage monitoring."""
-        memory_info = health_monitor.get_memory_usage()
-        
-        assert memory_info is not None
-        assert "total" in memory_info
-        assert "available" in memory_info
-        assert "percent" in memory_info
-        assert "used" in memory_info
-        
-        # Verify values are reasonable
-        assert memory_info["percent"] >= 0
-        assert memory_info["percent"] <= 100
-        assert memory_info["used"] <= memory_info["total"]
-        
-    def test_disk_usage_monitoring(self, health_monitor):
-        """Test disk usage monitoring."""
-        disk_info = health_monitor.get_disk_usage()
-        
-        assert disk_info is not None
-        assert "total" in disk_info
-        assert "used" in disk_info
-        assert "free" in disk_info
-        assert "percent" in disk_info
-        
-        # Verify values are reasonable
-        assert disk_info["percent"] >= 0
-        assert disk_info["percent"] <= 100
-        
-    @pytest.mark.asyncio
-    async def test_comprehensive_health_check(self, health_monitor):
-        """Test comprehensive health check with all services."""
-        with patch('src.utils.health_monitor.get_azure_client') as mock_azure, \
-             patch('src.utils.health_monitor.QdrantClient') as mock_qdrant:
-            
-            # Mock successful responses
-            mock_azure_client = Mock()
-            mock_azure_client.models.list.return_value = Mock()
-            mock_azure.return_value = mock_azure_client
-            
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.get_collections.return_value = Mock()
-            mock_qdrant.return_value = mock_qdrant_client
-            
-            health_status = await health_monitor.check_health()
-            
-            assert health_status["status"] == "healthy"
-            assert "azure_openai" in health_status["checks"]
-            assert "qdrant" in health_status["checks"]
-            assert "system" in health_status["checks"]
-            
-    @pytest.mark.asyncio
-    async def test_health_check_with_partial_failures(self, health_monitor):
-        """Test health check with some services failing."""
-        with patch('src.utils.health_monitor.get_azure_client') as mock_azure, \
-             patch('src.utils.health_monitor.QdrantClient') as mock_qdrant:
-            
-            # Mock Azure success, Qdrant failure
-            mock_azure_client = Mock()
-            mock_azure_client.models.list.return_value = Mock()
-            mock_azure.return_value = mock_azure_client
-            
-            mock_qdrant_client = Mock()
-            mock_qdrant_client.get_collections.side_effect = Exception("Failed")
-            mock_qdrant.return_value = mock_qdrant_client
-            
-            health_status = await health_monitor.check_health()
-            
-            assert health_status["status"] == "degraded"
-            assert health_status["checks"]["azure_openai"]["status"] == "healthy"
-            assert health_status["checks"]["qdrant"]["status"] == "unhealthy"
-            
-    def test_service_status_model(self):
-        """Test ServiceStatus model."""
-        status = ServiceStatus(
-            service="test_service",
-            status="healthy",
-            response_time=0.123,
-            timestamp=datetime.now(),
-            details={"version": "1.0.0"}
+        monitor = HealthMonitor(max_history=5)
+        assert monitor.max_history == 5
+        assert len(monitor.question_metrics) == 0
+        assert len(monitor.batch_metrics) == 0
+        assert len(monitor.error_counts) == 0
+    
+    def test_record_question_metric(self):
+        """Test recording question metrics with correct parameters."""
+        self.monitor.record_question_metric(
+            request_id="test_123",
+            question_length=50,
+            chunks_found=3,
+            processing_time_ms=125.5
         )
         
-        assert status.service == "test_service"
-        assert status.status == "healthy"
-        assert status.response_time == 0.123
-        assert status.details["version"] == "1.0.0"
+        # Check that metric was recorded
+        assert len(self.monitor.question_metrics) == 1
+        metric = list(self.monitor.question_metrics)[0]
+        assert metric['request_id'] == "test_123"
+        assert metric['question_length'] == 50
+        assert metric['chunks_found'] == 3
+        assert metric['processing_time_ms'] == 125.5
+        assert metric['success'] == True  # chunks_found > 0
+    
+    def test_record_batch_metric(self):
+        """Test recording batch metrics."""
+        self.monitor.record_batch_metric(
+            batch_id="batch_001",
+            total_questions=10,
+            successful_questions=8
+        )
         
-    def test_health_check_caching(self, health_monitor):
-        """Test health check result caching (if implemented)."""
-        # This would test caching behavior to avoid too frequent health checks
-        # Implementation depends on specific caching strategy
-        pass
+        assert len(self.monitor.batch_metrics) == 1
+        metric = list(self.monitor.batch_metrics)[0]
+        assert metric['batch_id'] == "batch_001"
+        assert metric['total_questions'] == 10
+        assert metric['successful_questions'] == 8
+        assert metric['success_rate'] == 0.8
+    
+    def test_record_error(self):
+        """Test recording errors."""
+        self.monitor.record_error("ValidationError", "Test error message")
+        self.monitor.record_error("ValidationError", "Another error")
+        self.monitor.record_error("NetworkError", "Connection failed")
         
-    @pytest.mark.asyncio
-    async def test_health_check_timeout(self, health_monitor):
-        """Test health check timeout handling."""
-        with patch('src.utils.health_monitor.get_azure_client') as mock_azure:
-            # Mock a slow response
-            import asyncio
-            
-            async def slow_response():
-                await asyncio.sleep(10)  # Longer than reasonable timeout
-                return Mock()
-                
-            mock_client = Mock()
-            mock_client.models.list = slow_response
-            mock_azure.return_value = mock_client
-            
-            # Health check should timeout and report unhealthy
-            health_status = await health_monitor.check_azure_openai_health()
-            
-            # Should complete in reasonable time (not 10 seconds)
-            assert health_status.status == "unhealthy"
-            
-    def test_health_monitor_configuration(self, health_monitor):
-        """Test health monitor configuration options."""
-        # Test different configuration options if available
-        config = {
-            "timeout": 5.0,
-            "retry_count": 3,
-            "check_interval": 60
-        }
+        assert self.monitor.error_counts["ValidationError"] == 2
+        assert self.monitor.error_counts["NetworkError"] == 1
+    
+    def test_get_health_metrics(self):
+        """Test getting comprehensive health metrics."""
+        # Record some test data
+        self.monitor.record_question_metric("req1", 30, 2, 100.0)
+        self.monitor.record_question_metric("req2", 45, 0, 200.0)
+        self.monitor.record_error("TestError", "Test message")
         
-        # This would test configuration of timeouts, retries, etc.
-        # Implementation depends on specific configuration options available
+        metrics = self.monitor.get_health_metrics()
+        
+        assert "uptime_seconds" in metrics
+        assert "total_questions_processed" in metrics
+        assert "question_processing" in metrics
+        assert "errors" in metrics
+        assert metrics["total_questions_processed"] == 2
+    
+    def test_get_error_summary(self):
+        """Test getting error summary."""
+        self.monitor.record_error("ValidationError", "Test error 1")
+        self.monitor.record_error("ValidationError", "Test error 2")
+        self.monitor.record_error("NetworkError", "Test error 3")
+        
+        summary = self.monitor.get_error_summary()
+        
+        assert "total_errors" in summary
+        assert "error_breakdown" in summary  # The actual key name
+        assert "most_common_error" in summary
+        assert summary["total_errors"] == 3
+        assert summary["error_breakdown"]["ValidationError"] == 2
+        assert summary["error_breakdown"]["NetworkError"] == 1
+        assert summary["most_common_error"] == "ValidationError"
+    
+    def test_reset_metrics(self):
+        """Test resetting all metrics."""
+        # Add some data
+        self.monitor.record_question_metric("req1", 30, 2, 100.0)
+        self.monitor.record_error("TestError", "Test message")
+        
+        # Reset and verify
+        self.monitor.reset_metrics()
+        
+        assert len(self.monitor.question_metrics) == 0
+        assert len(self.monitor.batch_metrics) == 0
+        assert len(self.monitor.error_counts) == 0
+    
+    def test_max_history_limit(self):
+        """Test that metrics respect max_history limit."""
+        monitor = HealthMonitor(max_history=3)
+        
+        # Add more metrics than the limit
+        for i in range(5):
+            monitor.record_question_metric(f"req_{i}", 30, 2, 100.0)
+        
+        # Should only keep the last 3
+        assert len(monitor.question_metrics) == 3
+    
+    def test_get_recent_questions(self):
+        """Test getting recent question metrics."""
+        # Record some metrics
+        self.monitor.record_question_metric("req1", 30, 2, 100.0)
+        self.monitor.record_question_metric("req2", 45, 3, 150.0)
+        
+        recent = self.monitor.get_recent_questions(limit=5)
+        
+        assert len(recent) == 2
+        assert recent[0]['request_id'] == "req1"
+        assert recent[1]['request_id'] == "req2"
+    
+    def test_export_metrics(self):
+        """Test exporting all metrics."""
+        self.monitor.record_question_metric("req1", 30, 2, 100.0)
+        self.monitor.record_error("TestError", "Test message")
+        
+        exported = self.monitor.export_metrics()
+        
+        assert "timestamp" in exported
+        assert "question_metrics" in exported
+        assert "error_counts" in exported
+        assert len(exported["question_metrics"]) == 1
+
+
+class TestLoggingUtils:
+    """Test logging utilities."""
+    
+    def test_setup_logging(self):
+        """Test logging setup with default parameters."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_file = Path(temp_dir) / "test.log"
+            
+            # Setup logging
+            setup_logging(str(log_file))
+            
+            # Test that we can get a logger and log messages
+            logger = logging.getLogger("test_logger")
+            assert logger is not None
+            
+            # Log a test message
+            logger.info("Test message")
+            
+            # Verify log file was created
+            assert log_file.exists()
+            
+            # Close all handlers to release file handles
+            for handler in logging.getLogger().handlers[:]:
+                handler.close()
+                logging.getLogger().removeHandler(handler)
+    
+    def test_get_logger(self):
+        """Test get_logger function."""
+        logger1 = get_logger("test.module1")
+        logger2 = get_logger("test.module2")
+        logger3 = get_logger("test.module1")  # Same name
+        
+        assert logger1.name == "test.module1"
+        assert logger2.name == "test.module2"
+        assert logger1 is logger3  # Should be the same instance
+    
+    def test_logger_mixin(self):
+        """Test LoggerMixin functionality."""
+        class TestClass(LoggerMixin):
+            def test_method(self):
+                return self.logger
+        
+        obj = TestClass()
+        logger = obj.test_method()
+        
+        assert isinstance(logger, logging.Logger)
+        assert logger.name.endswith("TestClass")
+    
+    def test_structured_logger(self):
+        """Test StructuredLogger functionality."""
+        with patch('logging.getLogger') as mock_get_logger:
+            mock_logger = Mock()
+            mock_get_logger.return_value = mock_logger
+            
+            struct_logger = StructuredLogger("test_struct")
+            
+            # Test structured logging methods
+            struct_logger.info_structured("Test message", key1="value1", key2="value2")
+            struct_logger.error_structured("Error message", error_code=500)
+            struct_logger.warning_structured("Warning message")
+            struct_logger.debug_structured("Debug message", debug_level=3)
+            
+            # Verify that the underlying logger methods were called
+            assert mock_logger.info.called
+            assert mock_logger.error.called
+            assert mock_logger.warning.called
+            assert mock_logger.debug.called
+    
+    def test_performance_logger(self):
+        """Test PerformanceLogger functionality."""
+        with patch('logging.getLogger') as mock_get_logger:
+            mock_logger = Mock()
+            mock_get_logger.return_value = mock_logger
+            
+            perf_logger = PerformanceLogger("test_perf")
+            
+            # Test timing and throughput logging
+            perf_logger.log_timing("operation1", 123.45, context="test")
+            perf_logger.log_throughput("operation2", 100, 1000.0, batch_size=10)
+            
+            # Verify logger calls
+            assert mock_logger.info.call_count == 2
+    
+    def test_error_tracker(self):
+        """Test ErrorTracker functionality."""
+        with patch('logging.getLogger') as mock_get_logger:
+            mock_logger = Mock()
+            mock_get_logger.return_value = mock_logger
+            
+            error_tracker = ErrorTracker("test_errors")
+            
+            # Track some errors
+            error_tracker.track_error("ValidationError", "Invalid input", request_id="123")
+            error_tracker.track_error("ValidationError", "Missing field", request_id="124")
+            error_tracker.track_error("NetworkError", "Connection timeout", server="api1")
+            
+            # Check error counts
+            summary = error_tracker.get_error_summary()
+            assert summary["ValidationError"] == 2
+            assert summary["NetworkError"] == 1
+            
+            # Verify logger calls
+            assert mock_logger.error.call_count == 3
 
 
 class TestUtilityIntegration:
-    """Test integration between utility modules."""
+    """Test integration between utility components."""
     
-    def test_logger_health_monitor_integration(self):
-        """Test that health monitor properly uses logger."""
-        with patch('src.utils.health_monitor.get_logger') as mock_get_logger:
-            mock_logger = Mock()
-            mock_get_logger.return_value = mock_logger
-            
-            health_monitor = HealthMonitor()
-            
-            # Verify logger was obtained
-            mock_get_logger.assert_called()
-            
-    @pytest.mark.asyncio
-    async def test_error_logging_in_health_checks(self):
-        """Test that errors in health checks are properly logged."""
-        with patch('src.utils.health_monitor.get_logger') as mock_get_logger, \
-             patch('src.utils.health_monitor.get_azure_client') as mock_azure:
-            
-            mock_logger = Mock()
-            mock_get_logger.return_value = mock_logger
-            
-            # Mock Azure client failure
-            mock_azure.side_effect = Exception("Connection failed")
-            
-            health_monitor = HealthMonitor()
-            health_status = await health_monitor.check_azure_openai_health()
-            
-            # Verify error was logged
-            assert mock_logger.error.called or mock_logger.exception.called
-            
-    def test_structured_logging_with_health_data(self):
-        """Test structured logging with health monitoring data."""
-        # This would test integration between structured logging and health data
-        # Implementation depends on specific logging format used
-        pass
-
-
-class TestErrorHandling:
-    """Test error handling in utility modules."""
+    def setup_method(self):
+        """Set up test components."""
+        self.monitor = HealthMonitor(max_history=100)
+        self.logger = get_logger("integration_test")
     
-    def test_logger_with_invalid_configuration(self):
-        """Test logger behavior with invalid configuration."""
-        # Test with invalid log level
-        try:
-            setup_logging(log_level="INVALID_LEVEL")
-        except ValueError:
-            # Expected for invalid log level
-            pass
-            
-        # Test with invalid file path
-        try:
-            setup_logging(log_file="/invalid/path/logfile.log")
-        except (OSError, IOError):
-            # Expected for invalid file path
-            pass
-            
-    @pytest.mark.asyncio
-    async def test_health_monitor_with_network_errors(self):
-        """Test health monitor resilience to network errors."""
-        health_monitor = HealthMonitor()
+    def test_monitor_and_logger_integration(self):
+        """Test health monitor and logger working together."""
+        # Record metrics while logging
+        self.logger.info("Recording test metric")
+        self.monitor.record_question_metric("test_123", 50, 3, 150.0)
         
-        # Mock network errors
-        with patch('src.utils.health_monitor.get_azure_client') as mock_azure:
-            mock_azure.side_effect = ConnectionError("Network unreachable")
+        # Verify both worked
+        assert len(self.monitor.question_metrics) == 1
+    
+    def test_performance_monitoring_with_logging(self):
+        """Test performance monitoring combined with logging."""
+        start_time = time.time()
+        self.logger.info("Starting performance test")
+        
+        # Simulate some work
+        time.sleep(0.1)
+        processing_time = (time.time() - start_time) * 1000  # Convert to ms
+        
+        self.monitor.record_question_metric(
+            request_id="perf_test_001",
+            question_length=100,
+            chunks_found=5,
+            processing_time_ms=processing_time
+        )
+        
+        self.logger.info(f"Performance test completed in {processing_time:.2f}ms")
+        
+        # Verify metrics were recorded
+        metrics = self.monitor.get_health_metrics()
+        assert metrics["total_questions_processed"] == 1
+        
+        # Verify processing time is reasonable (should be > 100ms due to sleep)
+        recorded_metric = list(self.monitor.question_metrics)[0]
+        assert recorded_metric["processing_time_ms"] > 100
+    
+    def test_error_handling_integration(self):
+        """Test error handling across components."""
+        try:
+            # Simulate an error condition
+            raise ValueError("Test error for integration testing")
+        except ValueError as e:
+            # Log the error
+            self.logger.error(f"Caught error: {e}")
             
-            health_status = await health_monitor.check_azure_openai_health()
-            
-            assert health_status.status == "unhealthy"
-            assert "network" in health_status.error.lower() or "connection" in health_status.error.lower()
-            
-    def test_utility_modules_with_missing_dependencies(self):
-        """Test utility module behavior when dependencies are missing."""
-        # This would test graceful degradation when optional dependencies are missing
-        # Implementation depends on specific dependencies and fallback strategies
-        pass
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+            # Record it in health monitor
+            self.monitor.record_error("ValueError", str(e))
+        
+        # Verify error was recorded
+        error_summary = self.monitor.get_error_summary()
+        assert error_summary["total_errors"] == 1
+        assert "ValueError" in error_summary["error_breakdown"]

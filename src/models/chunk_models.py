@@ -5,7 +5,7 @@ Models used internally for document processing and storage.
 
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
 
 
@@ -31,9 +31,9 @@ class ChunkMetadata(BaseModel):
     has_keywords: bool = Field(default=False, description="Whether chunk contains sustainability keywords")
     created_at: Optional[datetime] = Field(default_factory=datetime.now, description="Chunk creation timestamp")
     
-    class Config:
-        use_enum_values = True
-        schema_extra = {
+    model_config = ConfigDict(
+        use_enum_values=True,
+        json_schema_extra={
             "example": {
                 "source": "ntt_data_sustainability_report_2020.pdf",
                 "page": 15,
@@ -46,6 +46,7 @@ class ChunkMetadata(BaseModel):
                 "created_at": "2024-01-15T10:30:00Z"
             }
         }
+    )
 
 
 class DocumentChunk(BaseModel):
@@ -55,8 +56,8 @@ class DocumentChunk(BaseModel):
     metadata: ChunkMetadata = Field(..., description="Chunk metadata")
     embedding: Optional[List[float]] = Field(default=None, description="Vector embedding of the text")
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "text": "NTT DATA'nın 2020 yılı sürdürülebilirlik hedefleri arasında karbon emisyonlarını %30 azaltmak yer almaktadır...",
                 "metadata": {
@@ -72,6 +73,7 @@ class DocumentChunk(BaseModel):
                 "embedding": None  # Would contain 3072-dimensional vector in practice
             }
         }
+    )
 
 
 class ChunkAnalysis(BaseModel):
@@ -85,8 +87,9 @@ class ChunkAnalysis(BaseModel):
     sustainability_keywords: List[str] = Field(default=[], description="Found sustainability keywords")
     numerical_patterns: List[str] = Field(default=[], description="Found numerical patterns")
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(
+        use_enum_values=True
+    )
 
 
 class DocumentInfo(BaseModel):
@@ -99,9 +102,9 @@ class DocumentInfo(BaseModel):
     processing_date: datetime = Field(default_factory=datetime.now, description="Processing timestamp")
     file_size: Optional[int] = Field(default=None, description="File size in bytes")
     
-    class Config:
-        use_enum_values = True
-        schema_extra = {
+    model_config = ConfigDict(
+        use_enum_values=True,
+        json_schema_extra={
             "example": {
                 "filename": "ntt_data_sustainability_report_2020.pdf",
                 "total_pages": 45,
@@ -117,3 +120,4 @@ class DocumentInfo(BaseModel):
                 "file_size": 2548736
             }
         }
+    )

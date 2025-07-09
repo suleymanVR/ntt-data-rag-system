@@ -1,363 +1,264 @@
 """
 Test suite for API endpoints.
+Tests FastAPI routes, middleware, and error handling.
 """
 
 import pytest
 import sys
+import os
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, patch, AsyncMock, MagicMock
 import json
-from httpx import AsyncClient
+from fastapi.testclient import TestClient
 
 # Add the src directory to the Python path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from fastapi.testclient import TestClient
-from src.api.app import app
-from src.models.api_models import QueryRequest, DocumentInput
+from src.api.app import create_app
+from src.models.api_models import QuestionRequest, AnswerResponse, HealthResponse
 
 
-@pytest.fixture
-def client():
-    """Test client for FastAPI app."""
-    return TestClient(app)
-
-
-@pytest.fixture
-def async_client():
-    """Async test client for FastAPI app."""
-    return AsyncClient(app=app, base_url="http://test")
-
-
-@pytest.fixture
-def mock_rag_pipeline():
-    """Mock RAG pipeline for testing."""
-    mock_pipeline = AsyncMock()
+class TestAPIEndpoints:
+    """Test API endpoint functionality."""
     
-    # Mock successful query response
-    mock_pipeline.process_query.return_value = {
-        "answer": "NTT DATA focuses on sustainability through various initiatives including carbon reduction, renewable energy adoption, and community development programs.",
-        "sources": [
-            {
-                "source": "sustainability_report_2023.pdf",
-                "content": "NTT DATA is committed to sustainability...",
-                "score": 0.95
+    def setup_method(self):
+        """Set up test client for each test."""
+        # Mock all Azure and RAG dependencies
+        with patch('src.config.azure_clients.initialize_azure_clients'), \
+             patch('src.api.app.RAGPipeline') as mock_rag_class:
+            
+            # Mock RAG pipeline instance
+            mock_rag_instance = Mock()
+            mock_rag_instance.initialize = AsyncMock(return_value=True)
+            mock_rag_instance.get_system_status.return_value = {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "documents_loaded": 5,
+                "total_chunks": 100,
+                "chat_model": "gpt-4",
+                "embedding_model": "text-embedding-3-large",
+                "initialized": True,
+                "embedding_dimension": 3072,
+                "chunk_distribution": {"general": 100},
+                "optimization_features": ["multi_query"]
             }
-        ],
-        "query_id": "test-query-123"
-    }
+            mock_rag_class.return_value = mock_rag_instance
+            
+            self.app = create_app()
+            # Manually set the RAG pipeline in app state
+            self.app.state.rag_pipeline = mock_rag_instance
+            self.client = TestClient(self.app)
     
-    # Mock successful document ingestion
-    mock_pipeline.ingest_document.return_value = {
-        "status": "success",
-        "chunks_processed": 5,
-        "document_id": "doc-123"
-    }
+    def test_health_endpoint_success(self):
+        """Test health endpoint returns success."""
+        with patch('src.api.routes.health.is_azure_healthy', return_value=True):
+            response = self.client.get("/health")
+            
+            assert response.status_code == 200
+            data = response.json()
+            assert data["status"] == "healthy"
+            assert "timestamp" in data
+            assert "documents_loaded" in data
+            assert "total_chunks" in data
     
-    return mock_pipeline
-
-
-class TestHealthEndpoint:
-    """Test health check endpoint."""
+    def test_health_endpoint_azure_unhealthy(self):
+        """Test health endpoint when Azure is unhealthy."""
+        with patch('src.api.routes.health.is_azure_healthy', return_value=False):
+            response = self.client.get("/health")
+            
+            assert response.status_code == 200  # Still returns 200 but status is degraded
+            data = response.json()
+            assert data["status"] == "degraded"
+            assert data["model_status"] == "unhealthy"
     
-    def test_health_check(self, client):
-        """Test health check endpoint."""
-        response = client.get("/health")
+    def test_ask_endpoint_success(self):
+        """Test ask endpoint with successful response."""
+        mock_response = {
+            "answer": "NTT DATA's sustainability goals include carbon neutrality by 2030.",
+            "sources": ["sustainability_report_2023.pdf (Page 15)"],
+            "metadata": {
+                "chunks_found": 5,
+                "search_time_ms": 123.4,
+                "timestamp": "2024-01-01T00:00:00Z"
+            }
+        }
+        
+        # Set up mock for ask_question method
+        self.app.state.rag_pipeline.ask_question = AsyncMock(return_value=mock_response)
+        
+        response = self.client.post(
+            "/ask",
+            json={"question": "What are NTT DATA's sustainability goals?"}
+        )
         
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "healthy"
-        assert "timestamp" in data
-        assert "version" in data
-        
-    def test_health_check_includes_dependencies(self, client):
-        """Test that health check includes dependency status."""
-        response = client.get("/health")
-        data = response.json()
-        
-        assert "dependencies" in data
-        # Should include checks for Azure OpenAI and Qdrant
-        dependencies = data["dependencies"]
-        assert isinstance(dependencies, dict)
-
-
-class TestRAGEndpoints:
-    """Test RAG-related endpoints."""
+        assert data["answer"] == mock_response["answer"]
+        assert "sources" in data
+        assert "metadata" in data
     
-    @pytest.mark.asyncio
-    async def test_query_endpoint_success(self, async_client, mock_rag_pipeline):
-        """Test successful query processing."""
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            query_data = {
-                "query": "What are NTT DATA's sustainability initiatives?",
-                "filters": {"type": "sustainability_report"},
-                "limit": 5
-            }
-            
-            response = await async_client.post("/api/v1/query", json=query_data)
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert "answer" in data
-            assert "sources" in data
-            assert "query_id" in data
-            assert len(data["answer"]) > 0
-            
-    @pytest.mark.asyncio 
-    async def test_query_endpoint_validation(self, async_client):
-        """Test query endpoint input validation."""
-        # Test empty query
-        response = await async_client.post("/api/v1/query", json={"query": ""})
-        assert response.status_code == 422
+    def test_ask_endpoint_invalid_request(self):
+        """Test ask endpoint with invalid request."""
+        response = self.client.post(
+            "/ask",
+            json={"invalid_field": "test"}
+        )
         
-        # Test missing query
-        response = await async_client.post("/api/v1/query", json={})
-        assert response.status_code == 422
+        assert response.status_code == 422  # Validation error
+    
+    def test_ask_endpoint_empty_question(self):
+        """Test ask endpoint with empty question."""
+        response = self.client.post(
+            "/ask",
+            json={"question": ""}
+        )
         
-        # Test invalid limit
-        response = await async_client.post("/api/v1/query", json={
-            "query": "test",
-            "limit": -1
-        })
-        assert response.status_code == 422
+        assert response.status_code == 422  # Validation error
+    
+    def test_ask_endpoint_rag_error(self):
+        """Test ask endpoint when RAG pipeline fails."""
+        # Mock the pipeline to raise an exception
+        self.app.state.rag_pipeline.ask_question = AsyncMock(side_effect=Exception("RAG pipeline error"))
         
-    @pytest.mark.asyncio
-    async def test_query_endpoint_with_filters(self, async_client, mock_rag_pipeline):
-        """Test query endpoint with metadata filters."""
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            query_data = {
-                "query": "carbon emissions data",
-                "filters": {
-                    "type": "sustainability_report",
-                    "year": "2023",
-                    "department": "Environmental Affairs"
-                },
-                "limit": 3
-            }
-            
-            response = await async_client.post("/api/v1/query", json=query_data)
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert "answer" in data
-            
-            # Verify filters were passed to pipeline
-            mock_rag_pipeline.process_query.assert_called_once()
-            call_args = mock_rag_pipeline.process_query.call_args[0][0]
-            assert call_args.filters == query_data["filters"]
-            
-    @pytest.mark.asyncio
-    async def test_ingest_document_success(self, async_client, mock_rag_pipeline):
-        """Test successful document ingestion."""
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            document_data = {
-                "content": "This is a test sustainability report content with multiple paragraphs about environmental initiatives and carbon reduction strategies.",
-                "metadata": {
-                    "source": "test_report.pdf",
-                    "type": "sustainability_report",
-                    "year": "2023"
-                }
-            }
-            
-            response = await async_client.post("/api/v1/ingest", json=document_data)
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "success"
-            assert "chunks_processed" in data
-            assert "document_id" in data
-            
-    @pytest.mark.asyncio
-    async def test_ingest_document_validation(self, async_client):
-        """Test document ingestion input validation."""
-        # Test empty content
-        response = await async_client.post("/api/v1/ingest", json={
-            "content": "",
-            "metadata": {"source": "test.pdf"}
-        })
-        assert response.status_code == 422
+        response = self.client.post(
+            "/ask",
+            json={"question": "Test question"}
+        )
         
-        # Test missing content
-        response = await async_client.post("/api/v1/ingest", json={
-            "metadata": {"source": "test.pdf"}
-        })
-        assert response.status_code == 422
-        
-        # Test missing metadata
-        response = await async_client.post("/api/v1/ingest", json={
-            "content": "test content"
-        })
-        assert response.status_code == 422
-        
-    @pytest.mark.asyncio
-    async def test_query_endpoint_error_handling(self, async_client, mock_rag_pipeline):
-        """Test error handling in query endpoint."""
-        # Mock pipeline error
-        mock_rag_pipeline.process_query.side_effect = Exception("Processing error")
-        
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            query_data = {"query": "test query"}
-            
-            response = await async_client.post("/api/v1/query", json=query_data)
-            
-            assert response.status_code == 500
-            data = response.json()
-            assert "error" in data
-            
-    @pytest.mark.asyncio
-    async def test_ingest_endpoint_error_handling(self, async_client, mock_rag_pipeline):
-        """Test error handling in ingest endpoint."""
-        # Mock pipeline error
-        mock_rag_pipeline.ingest_document.side_effect = Exception("Ingestion error")
-        
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            document_data = {
-                "content": "test content",
-                "metadata": {"source": "test.pdf"}
-            }
-            
-            response = await async_client.post("/api/v1/ingest", json=document_data)
-            
-            assert response.status_code == 500
-            data = response.json()
-            assert "error" in data
+        assert response.status_code == 500
+        data = response.json()
+        assert "error" in data["detail"] or "error" in str(data)
 
 
-class TestMiddleware:
+class TestAPIModels:
+    """Test Pydantic models for API."""
+    
+    def test_question_request_validation(self):
+        """Test QuestionRequest model validation."""
+        # Valid request
+        valid_request = QuestionRequest(question="What is sustainability?")
+        assert valid_request.question == "What is sustainability?"
+        
+        # Invalid request - empty question should be caught by validator
+        with pytest.raises(ValueError):
+            QuestionRequest(question="")
+    
+    def test_answer_response_creation(self):
+        """Test AnswerResponse model creation."""
+        response = AnswerResponse(
+            answer="Test answer",
+            sources=[],
+            metadata={"processing_time": 1.0}
+        )
+        
+        assert response.answer == "Test answer"
+        assert response.sources == []
+        assert response.metadata["processing_time"] == 1.0
+    
+    def test_health_response_creation(self):
+        """Test HealthResponse model creation."""
+        response = HealthResponse(
+            status="healthy",
+            timestamp="2024-01-01T00:00:00Z",
+            documents_loaded=5,
+            total_chunks=100,
+            chat_model="gpt-4",
+            embedding_model="text-embedding-3-large",
+            model_status="healthy"
+        )
+        
+        assert response.status == "healthy"
+        assert response.documents_loaded == 5
+        assert response.total_chunks == 100
+
+
+class TestAPIMiddleware:
     """Test API middleware functionality."""
     
-    @pytest.mark.asyncio
-    async def test_cors_headers(self, async_client):
-        """Test CORS headers are properly set."""
-        response = await async_client.options("/api/v1/query")
-        
-        assert "access-control-allow-origin" in response.headers
-        assert "access-control-allow-methods" in response.headers
-        assert "access-control-allow-headers" in response.headers
-        
-    @pytest.mark.asyncio
-    async def test_request_logging(self, async_client):
-        """Test that requests are properly logged."""
-        with patch('src.api.middleware.logger') as mock_logger:
-            response = await async_client.get("/health")
+    def setup_method(self):
+        """Set up test client for each test."""
+        # Mock all Azure and RAG dependencies
+        with patch('src.config.azure_clients.initialize_azure_clients'), \
+             patch('src.api.app.RAGPipeline') as mock_rag_class:
             
-            # Verify logging was called
-            assert mock_logger.info.called
+            # Mock RAG pipeline instance
+            mock_rag_instance = Mock()
+            mock_rag_instance.initialize = AsyncMock(return_value=True)
+            mock_rag_instance.get_system_status.return_value = {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "documents_loaded": 5,
+                "total_chunks": 100,
+                "chat_model": "gpt-4",
+                "embedding_model": "text-embedding-3-large",
+                "initialized": True,
+                "embedding_dimension": 3072,
+                "chunk_distribution": {"general": 100},
+                "optimization_features": ["multi_query"]
+            }
+            mock_rag_class.return_value = mock_rag_instance
             
-    @pytest.mark.asyncio
-    async def test_error_handling_middleware(self, async_client):
-        """Test error handling middleware."""
-        # This would test custom error handling if implemented
-        response = await async_client.get("/nonexistent-endpoint")
-        
+            self.app = create_app()
+            # Manually set the RAG pipeline in app state
+            self.app.state.rag_pipeline = mock_rag_instance
+            self.client = TestClient(self.app)
+    
+    def test_request_logging_middleware(self):
+        """Test that requests are logged properly."""
+        with patch('src.api.routes.health.is_azure_healthy', return_value=True):
+            response = self.client.get("/health")
+            
+            # Should complete successfully
+            assert response.status_code == 200
+
+
+class TestAPIErrorHandling:
+    """Test API error handling scenarios."""
+    
+    def setup_method(self):
+        """Set up test client for each test."""
+        # Mock all Azure and RAG dependencies
+        with patch('src.config.azure_clients.initialize_azure_clients'), \
+             patch('src.api.app.RAGPipeline') as mock_rag_class:
+            
+            # Mock RAG pipeline instance
+            mock_rag_instance = Mock()
+            mock_rag_instance.initialize = AsyncMock(return_value=True)
+            mock_rag_instance.get_system_status.return_value = {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "documents_loaded": 5,
+                "total_chunks": 100,
+                "chat_model": "gpt-4",
+                "embedding_model": "text-embedding-3-large",
+                "initialized": True,
+                "embedding_dimension": 3072,
+                "chunk_distribution": {"general": 100},
+                "optimization_features": ["multi_query"]
+            }
+            mock_rag_class.return_value = mock_rag_instance
+            
+            self.app = create_app()
+            # Manually set the RAG pipeline in app state
+            self.app.state.rag_pipeline = mock_rag_instance
+            self.client = TestClient(self.app)
+            self.client = TestClient(self.app)
+    
+    def test_404_not_found(self):
+        """Test 404 handling for unknown endpoints."""
+        response = self.client.get("/nonexistent")
         assert response.status_code == 404
-        data = response.json()
-        assert "detail" in data
-
-
-class TestAuthentication:
-    """Test authentication and authorization (if implemented)."""
     
-    @pytest.mark.skipif(True, reason="Authentication not implemented yet")
-    @pytest.mark.asyncio
-    async def test_protected_endpoint_without_auth(self, async_client):
-        """Test accessing protected endpoint without authentication."""
-        response = await async_client.post("/api/v1/admin/status")
-        assert response.status_code == 401
-        
-    @pytest.mark.skipif(True, reason="Authentication not implemented yet") 
-    @pytest.mark.asyncio
-    async def test_protected_endpoint_with_valid_auth(self, async_client):
-        """Test accessing protected endpoint with valid authentication."""
-        headers = {"Authorization": "Bearer valid-token"}
-        response = await async_client.post("/api/v1/admin/status", headers=headers)
-        assert response.status_code == 200
-
-
-class TestPerformance:
-    """Test API performance characteristics."""
+    def test_405_method_not_allowed(self):
+        """Test 405 handling for wrong HTTP methods."""
+        response = self.client.delete("/health")
+        assert response.status_code == 405
     
-    @pytest.mark.asyncio
-    async def test_concurrent_requests(self, async_client, mock_rag_pipeline):
-        """Test handling concurrent requests."""
-        import asyncio
-        
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            # Create multiple concurrent requests
-            tasks = []
-            for i in range(5):
-                task = async_client.post("/api/v1/query", json={
-                    "query": f"test query {i}"
-                })
-                tasks.append(task)
-            
-            # Execute concurrently
-            responses = await asyncio.gather(*tasks)
-            
-            # All should succeed
-            for response in responses:
-                assert response.status_code == 200
-                
-    @pytest.mark.asyncio
-    async def test_large_document_ingestion(self, async_client, mock_rag_pipeline):
-        """Test ingesting large documents."""
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            # Create a large document
-            large_content = "This is a test document. " * 1000  # ~25KB
-            
-            document_data = {
-                "content": large_content,
-                "metadata": {"source": "large_document.pdf"}
-            }
-            
-            response = await async_client.post("/api/v1/ingest", json=document_data)
-            
-            assert response.status_code == 200
-            data = response.json()
-            assert data["status"] == "success"
-
-
-class TestDataValidation:
-    """Test data validation and sanitization."""
-    
-    @pytest.mark.asyncio
-    async def test_query_sanitization(self, async_client, mock_rag_pipeline):
-        """Test that queries are properly sanitized."""
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            # Test with potentially harmful input
-            query_data = {
-                "query": "<script>alert('xss')</script>What is sustainability?"
-            }
-            
-            response = await async_client.post("/api/v1/query", json=query_data)
-            
-            assert response.status_code == 200
-            # Verify the query was processed (exact sanitization depends on implementation)
-            mock_rag_pipeline.process_query.assert_called_once()
-            
-    @pytest.mark.asyncio
-    async def test_metadata_validation(self, async_client, mock_rag_pipeline):
-        """Test metadata validation during document ingestion."""
-        with patch('src.api.routes.rag.rag_pipeline', mock_rag_pipeline):
-            # Test with various metadata formats
-            test_cases = [
-                {
-                    "content": "test",
-                    "metadata": {"source": "test.pdf", "valid_field": "value"}
-                },
-                {
-                    "content": "test", 
-                    "metadata": {"source": "test.pdf", "number_field": 123}
-                },
-                {
-                    "content": "test",
-                    "metadata": {"source": "test.pdf", "list_field": ["a", "b", "c"]}
-                }
-            ]
-            
-            for test_data in test_cases:
-                response = await async_client.post("/api/v1/ingest", json=test_data)
-                assert response.status_code == 200
+    def test_invalid_json_request(self):
+        """Test handling of invalid JSON in request body."""
+        response = self.client.post(
+            "/ask",
+            content="invalid json",
+            headers={"Content-Type": "application/json"}
+        )
+        assert response.status_code == 422
 
 
 if __name__ == "__main__":

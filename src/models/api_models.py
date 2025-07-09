@@ -5,7 +5,7 @@ Pydantic models for FastAPI endpoint validation and documentation.
 
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
 class QuestionRequest(BaseModel):
@@ -15,8 +15,9 @@ class QuestionRequest(BaseModel):
     max_chunks: Optional[int] = Field(default=4, ge=1, le=10, description="Maximum chunks to retrieve")
     include_metadata: Optional[bool] = Field(default=True, description="Include detailed metadata in response")
     
-    @validator('question')
-    def validate_question(cls, v):
+    @field_validator('question')
+    @classmethod
+    def validate_question(cls, v: str) -> str:
         if not v.strip():
             raise ValueError('Question cannot be empty')
         return v.strip()
@@ -29,8 +30,8 @@ class AnswerResponse(BaseModel):
     sources: List[str] = Field(default=[], description="Source documents and pages")
     metadata: Dict[str, Any] = Field(default={}, description="Additional metadata about the response")
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "answer": "NTT DATA'nın 2020 yılındaki sürdürülebilirlik hedefleri...",
                 "sources": ["ntt_data_sustainability_report_2020.pdf (Sayfa 15)", "ntt_data_sustainability_report_2021.pdf (Sayfa 23)"],
@@ -42,6 +43,7 @@ class AnswerResponse(BaseModel):
                 }
             }
         }
+    )
 
 
 class HealthResponse(BaseModel):
@@ -58,8 +60,8 @@ class HealthResponse(BaseModel):
     chunk_distribution: Optional[Dict[str, int]] = Field(default={}, description="Distribution of chunk types")
     optimization_features: Optional[List[str]] = Field(default=[], description="Enabled optimization features")
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "status": "healthy",
                 "timestamp": "2024-01-15T10:30:00Z",
@@ -82,6 +84,7 @@ class HealthResponse(BaseModel):
                 ]
             }
         }
+    )
 
 
 class ErrorResponse(BaseModel):
@@ -92,8 +95,8 @@ class ErrorResponse(BaseModel):
     timestamp: str = Field(..., description="Error timestamp")
     request_id: Optional[str] = Field(default=None, description="Request identifier for tracking")
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "error": "No relevant content found for the question",
                 "error_type": "ContentNotFound",
@@ -101,6 +104,7 @@ class ErrorResponse(BaseModel):
                 "request_id": "req_123456789"
             }
         }
+    )
 
 
 class SystemInfoResponse(BaseModel):
@@ -112,8 +116,8 @@ class SystemInfoResponse(BaseModel):
     optimizations: List[str] = Field(..., description="Enabled optimizations")
     endpoints: Dict[str, str] = Field(..., description="Available endpoints")
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "message": "NTT DATA RAG API with Azure OpenAI",
                 "version": "2.1.0",
@@ -133,3 +137,4 @@ class SystemInfoResponse(BaseModel):
                 }
             }
         }
+    )

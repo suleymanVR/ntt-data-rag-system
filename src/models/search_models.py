@@ -4,7 +4,7 @@ Used for vector similarity search and retrieval.
 """
 
 from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from .chunk_models import ChunkMetadata, ChunkType
 
 
@@ -18,8 +18,9 @@ class SearchQuery(BaseModel):
     enable_boosting: bool = Field(default=True, description="Enable score boosting")
     chunk_types: Optional[List[ChunkType]] = Field(default=None, description="Filter by chunk types")
     
-    class Config:
-        use_enum_values = True
+    model_config = ConfigDict(
+        use_enum_values=True
+    )
 
 
 class SearchResult(BaseModel):
@@ -31,8 +32,8 @@ class SearchResult(BaseModel):
     boosted_score: float = Field(..., ge=0.0, description="Score after boosting")
     rank: int = Field(..., ge=1, description="Result rank in search results")
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "text": "NTT DATA'nın karbon emisyon hedefleri 2025 yılına kadar %30 azaltma şeklindedir...",
                 "metadata": {
@@ -50,6 +51,7 @@ class SearchResult(BaseModel):
                 "rank": 1
             }
         }
+    )
 
 
 class SearchResults(BaseModel):
@@ -61,8 +63,8 @@ class SearchResults(BaseModel):
     total_found: int = Field(..., ge=0, description="Total results found")
     search_time_ms: float = Field(..., ge=0, description="Search execution time in milliseconds")
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "query": "karbon emisyon hedefleri",
                 "processed_queries": [
@@ -83,6 +85,7 @@ class SearchResults(BaseModel):
                 "search_time_ms": 45.2
             }
         }
+    )
 
 
 class QueryExpansion(BaseModel):
@@ -94,8 +97,8 @@ class QueryExpansion(BaseModel):
     english_query: Optional[str] = Field(default=None, description="English translation/version")
     detected_keywords: List[str] = Field(default=[], description="Detected sustainability keywords")
     
-    class Config:
-        schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "original_query": "sürdürülebilirlik hedefleri",
                 "cleaned_query": "sürdürülebilirlik hedefleri",
@@ -104,6 +107,7 @@ class QueryExpansion(BaseModel):
                 "detected_keywords": ["sürdürülebilirlik", "hedef"]
             }
         }
+    )
 
 
 class SimilarityMatrix(BaseModel):
