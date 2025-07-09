@@ -19,6 +19,7 @@ from src.api.app import create_app
 from src.core.rag_pipeline import RAGPipeline
 from src.config.settings import settings
 from src.utils.logger import setup_logging
+from src.utils.port_manager import get_available_port, get_process_info_on_port
 
 logger = logging.getLogger(__name__)
 
@@ -117,21 +118,48 @@ async def run_standalone():
 
 
 def run_api_server():
-    """Run the FastAPI server."""
+    """Run the FastAPI server with automatic port management."""
     print("🌐 Starting NTT DATA RAG API Server...")
     print(f"🌍 Environment: {settings.environment}")
     print(f"🏠 Host: {settings.api.host}")
-    print(f"🚪 Port: {settings.api.port}")
-    print(f"📚 Reports directory: {settings.directories.reports_dir}")
+    print(f"� Reports directory: {settings.directories.reports_dir}")
+    
+    # Check and handle port conflicts
+    original_port = settings.api.port
+    print(f"� Checking port {original_port}...")
+    
+    # Get process info if port is in use
+    processes = get_process_info_on_port(original_port)
+    if processes:
+        print(f"⚠️  Port {original_port} is in use by:")
+        for proc in processes:
+            print(f"   - PID {proc['pid']}: {proc['name']}")
+        
+        print(f"🔍 Finding alternative port...")
+    
+    # Get available port (this will handle the conflict)
+    available_port = get_available_port(original_port, auto_kill=False)
+    
+    if available_port != original_port:
+        print(f"✅ Using port {available_port} instead of {original_port}")
+    else:
+        print(f"✅ Port {original_port} is available")
+    
+    # Update settings with available port
+    settings.api.port = available_port
     
     # Create FastAPI app
     app = create_app()
+    
+    print(f"🚀 Server starting on http://{settings.api.host}:{available_port}")
+    print(f"📖 API Documentation: http://{settings.api.host}:{available_port}/docs")
+    print(f"🔍 Interactive API: http://{settings.api.host}:{available_port}/redoc")
     
     # Run with uvicorn
     uvicorn.run(
         app,
         host=settings.api.host,
-        port=settings.api.port,
+        port=available_port,
         log_level=settings.logging.log_level.lower(),
         access_log=True,
         server_header=False,
