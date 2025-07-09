@@ -169,15 +169,37 @@ data/logs/*
 data/cache/*
 !data/cache/.gitkeep
 
+# Qdrant specific
+qdrant_data/
+
+# Embedding and model files
+*.bin
+*.onnx
+*.pt
+*.pth
+*.h5
+*.npy
+*.npz
+
+# Large files
+*.csv
+*.json
+# Remove these if you want to include example data files
+# *.xlsx
+# *.parquet
+
 # Reports
 reports/*
 !reports/.gitkeep
 
 # Azure specific
 .azure/
+.azureml/
+azure_config.json
 
 # Docker
 .dockerignore
+docker-volumes/
 
 # OS specific
 .DS_Store
