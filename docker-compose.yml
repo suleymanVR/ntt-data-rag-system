@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # QDRANT Vector Database - Enterprise-grade
   qdrant:
@@ -14,11 +12,7 @@ services:
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      - QDRANT__LOG_LEVEL=INFO
     networks:
       - ntt-network
 
@@ -37,8 +31,8 @@ services:
       - PYTHONUNBUFFERED=1
       - ENVIRONMENT=production
       - LOG_LEVEL=INFO
-      - QDRANT_HOST=qdrant  # Service name in Docker network
-      - QDRANT_PORT=6333
+      - RAG_QDRANT_HOST=qdrant  # Service name in Docker network
+      - RAG_QDRANT_PORT=6333
     
     ports:
       - "8000:8000"
@@ -50,10 +44,17 @@ services:
     
     depends_on:
       qdrant:
-        condition: service_healthy
+        condition: service_started
     
     networks:
       - ntt-network
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     
     logging:
       driver: "json-file"

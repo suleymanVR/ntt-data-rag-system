@@ -29,5 +29,4 @@ pytest
 pytest-asyncio
 pytest-mock
 httpx
-unittest-mock
 cryptography
