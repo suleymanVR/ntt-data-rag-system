@@ -370,4 +370,3 @@ A: Reduce chunk size or increase system memory
 
 ---
 
-**Built with ❤️ for NTT DATA AI Case Study**
