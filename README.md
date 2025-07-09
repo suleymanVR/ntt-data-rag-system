@@ -290,8 +290,8 @@ NTT_DATA_AI_CASE/
 │   ├── 📁 api/                                # FastAPI application layer
 │   │   ├── 📁 routes/                         # API route handlers
 │   │   │   ├── 📄 __init__.py                 # Package initialization
-│   │   │   ├── 📄 health.py                   # Health check endpoints
-│   │   │   └── 📄 rag.py                      # RAG question answering endpoints
+│   │   │   ├── 📄 ask.py                      # RAG question answering endpoints
+│   │   │   └── 📄 health.py                   # Health check endpoints
 │   │   ├── 📄 __init__.py                     # Package initialization
 │   │   ├── 📄 app.py                          # FastAPI application initialization
 │   │   └── 📄 middleware.py                   # Custom middleware (logging, CORS)
@@ -318,17 +318,23 @@ NTT_DATA_AI_CASE/
 │   ├── 📁 utils/                              # Utility functions
 │   │   ├── 📄 __init__.py                     # Package initialization
 │   │   ├── 📄 health_monitor.py               # System health monitoring utilities
-│   │   └── 📄 logger.py                       # Structured logging configuration
+│   │   ├── 📄 logger.py                       # Structured logging configuration
+│   │   └── 📄 port_manager.py                 # Dynamic port allocation & conflict resolution
 │   └── 📄 __init__.py                         # Package initialization
 ├── 📁 tests/                                  # Comprehensive test suite
-│   ├── 📄 conftest.py                         # Pytest configuration & fixtures
 │   ├── 📄 test_api.py                         # API endpoint tests
-│   ├── 📄 test_comprehensive_config.py        # Comprehensive configuration tests
 │   ├── 📄 test_config.py                      # Configuration & settings tests
-│   ├── 📄 test_integration.py                 # Integration tests
 │   ├── 📄 test_rag_system.py                  # RAG system tests
 │   ├── 📄 test_simple_config.py               # Simple configuration tests
 │   └── 📄 test_utils.py                       # Utility function tests
+├── 📁 data/                                   # Data storage directory
+│   ├── 📁 logs/                               # Application logs
+│   │   └── 📄 .gitkeep                        # Keep directory in version control
+│   └── 📁 cache/                              # Temporary cache files
+│       └── 📄 .gitkeep                        # Keep directory in version control
+├── 📁 htmlcov/                                # Test coverage reports
+│   ├── 📄 index.html                          # Main coverage report
+│   └── 📄 *.html                              # Module-specific coverage reports
 ├── 📄 .dockerignore                           # Docker ignore patterns
 ├── 📄 .env                                    # Environment variables (not in git)
 ├── 📄 .gitignore                              # Git ignore patterns
