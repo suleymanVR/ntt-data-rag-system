@@ -423,5 +423,153 @@ class TestConfigurationSecurity:
                 assert settings.api_key == valid_key
 
 
+class TestAzureClientsExtended:
+    """Extended tests for Azure clients to achieve 100% coverage."""
+    
+    def test_initialization_failure_handling(self):
+        """Test Azure client initialization failure handling."""
+        from src.config.azure_clients import azure_client_manager
+        
+        # Reset the client manager
+        azure_client_manager._initialized = False
+        azure_client_manager._embedding_client = None
+        azure_client_manager._chat_client = None
+        
+        # Mock AzureOpenAI to raise an exception
+        with patch('src.config.azure_clients.AzureOpenAI') as mock_azure:
+            mock_azure.side_effect = Exception("Connection failed")
+            
+            with pytest.raises(Exception) as excinfo:
+                azure_client_manager.initialize_clients()
+            
+            assert "Connection failed" in str(excinfo.value)
+            assert not azure_client_manager._initialized
+    
+    def test_is_azure_healthy_function(self):
+        """Test the global is_azure_healthy function."""
+        from src.config.azure_clients import is_azure_healthy, azure_client_manager
+        
+        # Reset the client manager
+        azure_client_manager._initialized = False
+        azure_client_manager._embedding_client = None
+        azure_client_manager._chat_client = None
+        
+        # Should return False when not initialized
+        assert is_azure_healthy() is False
+        
+        # Mock successful initialization
+        with patch('src.config.azure_clients.AzureOpenAI') as mock_azure:
+            with patch('src.config.azure_clients.AzureOpenAIChatCompletionClient') as mock_chat:
+                mock_azure.return_value = Mock()
+                mock_chat.return_value = Mock()
+                
+                azure_client_manager.initialize_clients()
+                
+                # Should return True when properly initialized
+                assert is_azure_healthy() is True
+    
+    def test_client_properties_when_not_initialized(self):
+        """Test client properties when not initialized."""
+        from src.config.azure_clients import azure_client_manager
+        
+        # Reset the client manager
+        azure_client_manager._initialized = False
+        azure_client_manager._embedding_client = None
+        azure_client_manager._chat_client = None
+        
+        # Test embedding_client property
+        with pytest.raises(RuntimeError) as excinfo:
+            _ = azure_client_manager.embedding_client
+        assert "Azure clients not initialized" in str(excinfo.value)
+        
+        # Test chat_client property
+        with pytest.raises(RuntimeError) as excinfo:
+            _ = azure_client_manager.chat_client
+        assert "Azure clients not initialized" in str(excinfo.value)
+    
+    def test_is_healthy_property(self):
+        """Test the is_healthy property in different states."""
+        from src.config.azure_clients import azure_client_manager
+        
+        # Reset the client manager
+        azure_client_manager._initialized = False
+        azure_client_manager._embedding_client = None
+        azure_client_manager._chat_client = None
+        
+        # Should be False when not initialized
+        assert azure_client_manager.is_healthy is False
+        
+        # Set initialized but no clients
+        azure_client_manager._initialized = True
+        assert azure_client_manager.is_healthy is False
+        
+        # Set one client but not the other
+        azure_client_manager._embedding_client = Mock()
+        assert azure_client_manager.is_healthy is False
+        
+        # Set both clients
+        azure_client_manager._chat_client = Mock()
+        assert azure_client_manager.is_healthy is True
+    
+    def test_connection_test_success(self):
+        """Test successful connection test."""
+        from src.config.azure_clients import azure_client_manager
+        
+        # Reset and initialize with mock
+        azure_client_manager._initialized = False
+        azure_client_manager._embedding_client = None
+        azure_client_manager._chat_client = None
+        
+        mock_embedding_client = Mock()
+        mock_response = Mock()
+        mock_response.data = [Mock()]  # Non-empty data
+        mock_embedding_client.embeddings.create.return_value = mock_response
+        
+        azure_client_manager._initialized = True
+        azure_client_manager._embedding_client = mock_embedding_client
+        azure_client_manager._chat_client = Mock()
+        
+        # Test successful connection
+        result = azure_client_manager.test_connection()
+        assert result is True
+        mock_embedding_client.embeddings.create.assert_called_once()
+    
+    def test_connection_test_failure_no_data(self):
+        """Test connection test failure when no data returned."""
+        from src.config.azure_clients import azure_client_manager
+        
+        # Reset and initialize with mock
+        azure_client_manager._initialized = True
+        azure_client_manager._chat_client = Mock()
+        
+        mock_embedding_client = Mock()
+        mock_response = Mock()
+        mock_response.data = []  # Empty data
+        mock_embedding_client.embeddings.create.return_value = mock_response
+        
+        azure_client_manager._embedding_client = mock_embedding_client
+        
+        # Test connection failure due to no data
+        result = azure_client_manager.test_connection()
+        assert result is False
+    
+    def test_connection_test_exception(self):
+        """Test connection test failure due to exception."""
+        from src.config.azure_clients import azure_client_manager
+        
+        # Reset and initialize with mock
+        azure_client_manager._initialized = True
+        azure_client_manager._chat_client = Mock()
+        
+        mock_embedding_client = Mock()
+        mock_embedding_client.embeddings.create.side_effect = Exception("API Error")
+        
+        azure_client_manager._embedding_client = mock_embedding_client
+        
+        # Test connection failure due to exception
+        result = azure_client_manager.test_connection()
+        assert result is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
