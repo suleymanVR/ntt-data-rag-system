@@ -1,0 +1,33 @@
+# Core dependencies
+python-dotenv
+pydantic
+pydantic-settings
+
+# PDF Processing
+pypdf
+
+# Machine Learning & Embeddings
+numpy
+scikit-learn
+
+# Azure OpenAI
+openai
+
+# AutoGen
+autogen-agentchat
+autogen-ext[openai]
+
+# FastAPI & Web
+fastapi
+uvicorn[standard]
+
+# Vector Database - QDRANT
+qdrant-client
+
+# Development & Testing 
+pytest
+pytest-asyncio
+pytest-mock
+httpx
+unittest-mock
+cryptography

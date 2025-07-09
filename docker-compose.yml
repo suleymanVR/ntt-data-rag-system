@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # QDRANT Vector Database - Enterprise-grade
+  qdrant:
+    image: qdrant/qdrant:v1.7.0
+    container_name: ntt-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"      # REST API
+      - "6334:6334"      # gRPC API (optional)
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - ntt-network
+
+  # NTT RAG Application
+  ntt-rag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ntt-rag-system
+    restart: unless-stopped
+    
+    env_file:
+      - .env
+    
+    environment:
+      - PYTHONUNBUFFERED=1
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - QDRANT_HOST=qdrant  # Service name in Docker network
+      - QDRANT_PORT=6333
+    
+    ports:
+      - "8000:8000"
+    
+    volumes:
+      - ./reports:/app/reports:ro
+      - ntt_logs:/app/data/logs
+      - ./data:/app/data
+    
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    
+    networks:
+      - ntt-network
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+# Named volumes
+volumes:
+  qdrant_storage:
+    driver: local
+  ntt_logs:
+    driver: local
+
+# Custom network
+networks:
+  ntt-network:
+    driver: bridge
