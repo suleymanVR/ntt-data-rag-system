@@ -1,12 +1,12 @@
 services:
-  # QDRANT Vector Database - Enterprise-grade
+  # QDRANT Vector Database 
   qdrant:
     image: qdrant/qdrant:v1.7.0
     container_name: ntt-qdrant
     restart: unless-stopped
     ports:
       - "6333:6333"      # REST API
-      - "6334:6334"      # gRPC API (optional)
+      - "6334:6334"      # gRPC API 
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:

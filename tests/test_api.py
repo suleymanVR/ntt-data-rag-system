@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from src.api.app import create_app
-from src.models.api_models import QuestionRequest, AnswerResponse, HealthResponse
+from src.models.api_models import QuestionRequest, AnswerResponse, HealthResponse, ConversationMessage
 
 
 class TestAPIEndpoints:
@@ -127,6 +127,86 @@ class TestAPIEndpoints:
         assert response.status_code == 500
         data = response.json()
         assert "error" in data["detail"] or "error" in str(data)
+    
+    def test_ask_endpoint_with_conversation_history(self):
+        """Test ask endpoint with conversation history."""
+        mock_response = {
+            "answer": "You asked about NTT DATA's sustainability goals.",
+            "sources": [],
+            "metadata": {
+                "chunks_found": 2,
+                "search_time_ms": 89.5,
+                "timestamp": "2024-01-01T00:00:00Z",
+                "context_used": True
+            }
+        }
+        
+        # Mock conversation history
+        conversation_history = [
+            {"role": "user", "content": "What are NTT DATA's sustainability goals?"},
+            {"role": "assistant", "content": "NTT DATA aims for carbon neutrality by 2030."}
+        ]
+        
+        # Set up mock for ask_question method
+        self.app.state.rag_pipeline.ask_question = AsyncMock(return_value=mock_response)
+        
+        response = self.client.post(
+            "/ask",
+            json={
+                "question": "What did I just ask?",
+                "conversation_history": conversation_history,
+                "max_chunks": 5,
+                "include_metadata": True
+            }
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "sustainability goals" in data["answer"].lower()
+        assert data["metadata"]["context_used"] is True
+    
+    def test_ask_endpoint_invalid_conversation_history(self):
+        """Test ask endpoint with invalid conversation history format."""
+        response = self.client.post(
+            "/ask",
+            json={
+                "question": "Test question",
+                "conversation_history": "invalid_format",  # Should be list
+                "max_chunks": 5
+            }
+        )
+        
+        assert response.status_code == 422  # Validation error
+    
+    def test_ask_endpoint_empty_conversation_history(self):
+        """Test ask endpoint with empty conversation history."""
+        mock_response = {
+            "answer": "Test answer without context.",
+            "sources": [],
+            "metadata": {
+                "chunks_found": 3,
+                "search_time_ms": 95.2,
+                "timestamp": "2024-01-01T00:00:00Z",
+                "context_used": False
+            }
+        }
+        
+        # Set up mock for ask_question method
+        self.app.state.rag_pipeline.ask_question = AsyncMock(return_value=mock_response)
+        
+        response = self.client.post(
+            "/ask",
+            json={
+                "question": "Test question",
+                "conversation_history": [],  # Empty history
+                "max_chunks": 5
+            }
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["answer"] == mock_response["answer"]
+        assert data["metadata"]["context_used"] is False
 
 
 class TestAPIModels:
@@ -169,6 +249,25 @@ class TestAPIModels:
         assert response.status == "healthy"
         assert response.documents_loaded == 5
         assert response.total_chunks == 100
+    
+    def test_conversation_message_creation(self):
+        """Test ConversationMessage model creation."""
+        message = ConversationMessage(
+            role="user",
+            content="Test message"
+        )
+        
+        assert message.role == "user"
+        assert message.content == "Test message"
+        
+        # Test assistant message
+        assistant_message = ConversationMessage(
+            role="assistant",
+            content="Test response"
+        )
+        
+        assert assistant_message.role == "assistant"
+        assert assistant_message.content == "Test response"
 
 
 class TestAPIMiddleware:

@@ -204,3 +204,6 @@ docker-volumes/
 # OS specific
 .DS_Store
 Thumbs.db
+
+# Ui specific
+ui/

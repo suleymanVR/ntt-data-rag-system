@@ -203,8 +203,8 @@ class RAGPipeline:
             logger.error(f"❌ Error extracting sources: {e}")
             return []
     
-    async def ask_question(self, question: str, max_chunks: int = None) -> Dict[str, Any]:
-        """Process a question through the complete RAG pipeline using Qdrant."""
+    async def ask_question(self, question: str, max_chunks: int = None, conversation_history: List[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Process a question through the complete RAG pipeline using Qdrant with conversation context."""
         try:
             logger.info(f"❓ Processing question: {question}")
             
@@ -254,11 +254,22 @@ class RAGPipeline:
             # Extract sources
             sources = self._extract_sources(search_results.results)
             
-            # Create the complete prompt with context
+            # Format conversation history if provided
+            conversation_context = ""
+            if conversation_history and len(conversation_history) > 0:
+                conversation_context = "\n\nÖnceki konuşma bağlamı:\n"
+                for msg in conversation_history[-6:]:  # Last 6 messages (3 exchanges)
+                    role = "Kullanıcı" if msg.get("role") == "user" else "Asistan"
+                    content = msg.get("content", "")
+                    conversation_context += f"{role}: {content}\n"
+                conversation_context += "\n"
+            
+            # Create the complete prompt with context and conversation history
             prompt_with_context = f"""Bağlam bilgileri:
-{context}
+{context}{conversation_context}
+Güncel Soru: {question}
 
-Soru: {question}"""
+Lütfen önceki konuşma bağlamını da dikkate alarak güncel soruyu yanıtla."""
             
             # Generate response using AutoGen agent
             logger.info("🤖 Generating response...")
@@ -286,6 +297,7 @@ Soru: {question}"""
                 "chat_model": settings.azure.deployment,
                 "embedding_model": settings.azure.embedding_deployment,
                 "vector_database": "Qdrant v1.7.0",
+                "conversation_context_used": len(conversation_history) if conversation_history else 0,
                 "timestamp": datetime.now().isoformat()
             }
             

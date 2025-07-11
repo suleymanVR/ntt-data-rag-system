@@ -66,9 +66,18 @@ async def ask_question(
         
         # Process the question through RAG pipeline
         try:
+            # Convert conversation history to dict format if provided
+            conversation_history = None
+            if request.conversation_history:
+                conversation_history = [
+                    {"role": msg.role, "content": msg.content}
+                    for msg in request.conversation_history
+                ]
+            
             result = await rag_pipeline.ask_question(
                 question=request.question,
-                max_chunks=request.max_chunks
+                max_chunks=request.max_chunks,
+                conversation_history=conversation_history
             )
             
             # Add request ID to metadata

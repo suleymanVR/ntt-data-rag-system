@@ -29,7 +29,6 @@ class AzureOpenAISettings(BaseSettings):
     )
 
 
-# settings.py'da RAGSettings class'ına şunları ekle:
 
 class RAGSettings(BaseSettings):
     """RAG system specific settings."""
@@ -50,7 +49,7 @@ class RAGSettings(BaseSettings):
     enable_synonym_expansion: bool = Field(default=True, description="Enable synonym expansion")
     enable_bilingual_support: bool = Field(default=True, description="Enable Turkish/English support")
     
-    # Qdrant Configuration - YENİ EKLENEN
+    # Qdrant Configuration
     qdrant_host: str = Field(default="localhost", description="Qdrant server host")
     qdrant_port: int = Field(default=6333, description="Qdrant server port")
     qdrant_collection_name: str = Field(default="ntt_sustainability_chunks", description="Qdrant collection name")
@@ -78,7 +77,7 @@ class APISettings(BaseSettings):
     # API Documentation
     title: str = Field(default="NTT DATA RAG API", description="API title")
     description: str = Field(
-        default="NTT DATA Sürdürülebilirlik Raporları için Azure OpenAI Tabanlı RAG Sistemi",
+        default="NTT DATA Sürdürülebilirlik Raporları RAG Sistemi",
         description="API description"
     )
     version: str = Field(default="2.1.0", description="API version")

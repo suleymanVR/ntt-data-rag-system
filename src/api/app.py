@@ -102,8 +102,8 @@ def create_app() -> FastAPI:
             "version": settings.api.version,
             "environment": settings.environment,
             "models": {
-                "chat": settings.azure.deployment,
-                "embedding": settings.azure.embedding_deployment
+                "chat": settings.azure.azure_deployment,
+                "embedding": settings.azure.azure_embedding_deployment
             },
             "optimizations": [
                 "multi_query_search",
@@ -136,3 +136,7 @@ def get_rag_pipeline() -> RAGPipeline:
     if rag_pipeline is None:
         raise RuntimeError("RAG pipeline not initialized")
     return rag_pipeline
+
+
+# Create app instance
+app = create_app()

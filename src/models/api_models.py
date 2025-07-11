@@ -8,12 +8,19 @@ from datetime import datetime
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 
+class ConversationMessage(BaseModel):
+    """A single message in conversation history."""
+    role: str = Field(..., description="Message role: 'user' or 'assistant'")
+    content: str = Field(..., description="Message content")
+
+
 class QuestionRequest(BaseModel):
     """Request model for asking questions."""
     
     question: str = Field(..., min_length=1, max_length=1000, description="The question to ask")
     max_chunks: Optional[int] = Field(default=4, ge=1, le=10, description="Maximum chunks to retrieve")
     include_metadata: Optional[bool] = Field(default=True, description="Include detailed metadata in response")
+    conversation_history: Optional[List[ConversationMessage]] = Field(default=[], description="Previous conversation context")
     
     @field_validator('question')
     @classmethod
