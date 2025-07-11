@@ -27,59 +27,105 @@ graph TB
     subgraph "Client Interfaces"
         API[REST API Client]
         WEB[Web Interface]
-        CLI[CLI Tool]
+        CLI[CLI Tool - Standalone Mode]
     end
     
     subgraph "API Gateway Layer"
         FASTAPI[FastAPI Server - Async Processing]
-        MIDDLEWARE[Request Middleware - Logging & Monitoring]
-        ROUTES[API Routes - /ask & /health]
+        MIDDLEWARE[Request Middleware - CORS & Error Handling]
+        ROUTES[API Routes - /ask, /health, /batch, /examples]
+        PORT[Port Manager - Auto Conflict Resolution]
     end
     
     subgraph "Core Intelligence Engine"
-        RAG[RAG Pipeline Controller - Orchestration Layer]
-        PROCESSOR[Document Processor - PDF to Chunks]
-        QUERY[Query Enhancement - Multi-Query Generation]
-        RETRIEVER[Vector Retriever - Semantic Search]
-        EMBEDDINGS[Embedding Manager - Vector Generation]
+        RAG[RAG Pipeline Controller - Main Orchestrator]
+        PROCESSOR[Text Processor - PDF Analysis & Chunking]
+        ANALYZER[Chunk Analyzer - Content Type Classification]
+        QUERY[Query Enhancer - Multi-Query & Domain Injection]
+        RETRIEVER[Vector Retriever - Semantic Search + Boosting]
+        EMBEDDINGS[Embedding Service - Batch Processing]
+        CONTEXT[Context Builder - Top-K Selection & Formatting]
     end
     
-    subgraph "Data & Storage Layer"
-        QDRANT[Qdrant Vector Database - High-Performance Vectors]
-        CACHE[Smart PDF Cache - Performance Optimization]
-        DOCS[Sustainability Reports - PDF Documents]
+    subgraph "Data Processing Layer"
+        CHUNKER[Smart Chunker - Overlap & Type-Aware]
+        METADATA[Metadata Manager - Source Attribution]
+        SCORER[Content Scorer - Type-Based Boosting]
+    end
+    
+    subgraph "Storage & Cache Layer"
+        QDRANT[Qdrant Vector DB - HNSW Algorithm]
+        CACHE[PDF Processing Cache - Incremental Loading]
+        DOCS[Sustainability Reports - PDF Collection]
+        MEMORY[Conversation Memory - 6 Message History]
     end
     
     subgraph "Azure OpenAI Services"
-        GPT41[GPT-4.1 - Response Generation]
-        EMBEDDING[text-embedding-3-large - Vector Embeddings]
+        GPT4[GPT-4 - Response Generation]
+        EMBEDDING_MODEL[text-embedding-3-large - 3072D Vectors]
     end
     
+    subgraph "Configuration & Utils"
+        SETTINGS[Settings Manager - Environment Config]
+        LOGGER[Logger - Structured Logging]
+        HEALTH[Health Monitor - Multi-Component Check]
+    end
+    
+    %% Client to API Layer
     API --> FASTAPI
     WEB --> FASTAPI
     CLI --> RAG
+    
+    %% API Gateway Flow
+    FASTAPI --> PORT
     FASTAPI --> MIDDLEWARE
     MIDDLEWARE --> ROUTES
     ROUTES --> RAG
+    
+    %% Core RAG Pipeline Flow
     RAG --> PROCESSOR
     RAG --> QUERY
     RAG --> RETRIEVER
-    RAG --> EMBEDDINGS
-    PROCESSOR --> CACHE
-    QUERY --> GPT41
-    EMBEDDINGS --> EMBEDDING
-    RETRIEVER --> QDRANT
-    CACHE --> DOCS
+    RAG --> CONTEXT
     
+    %% Document Processing Flow
+    PROCESSOR --> CHUNKER
+    PROCESSOR --> ANALYZER
+    CHUNKER --> METADATA
+    ANALYZER --> SCORER
+    
+    %% Query & Retrieval Flow
+    QUERY --> EMBEDDINGS
+    EMBEDDINGS --> EMBEDDING_MODEL
+    RETRIEVER --> QDRANT
+    RETRIEVER --> SCORER
+    CONTEXT --> GPT4
+    
+    %% Data & Storage Flow
+    PROCESSOR --> CACHE
+    CACHE --> DOCS
+    CHUNKER --> QDRANT
+    ROUTES --> MEMORY
+    
+    %% Configuration Flow
+    FASTAPI --> SETTINGS
+    RAG --> LOGGER
+    ROUTES --> HEALTH
+    
+    %% Styling
     classDef primary fill:#e3f2fd,stroke:#1976d2,stroke-width:3px
     classDef intelligence fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     classDef external fill:#fff3e0,stroke:#f57c00,stroke-width:2px
     classDef data fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef config fill:#f1f8e9,stroke:#689f38,stroke-width:2px
+    classDef processing fill:#fce4ec,stroke:#c2185b,stroke-width:2px
     
     class FASTAPI,RAG primary
-    class PROCESSOR,QUERY,RETRIEVER,EMBEDDINGS intelligence
-    class GPT41,EMBEDDING external
-    class QDRANT,CACHE,DOCS data
+    class PROCESSOR,QUERY,RETRIEVER,EMBEDDINGS,CONTEXT intelligence
+    class GPT4,EMBEDDING_MODEL external
+    class QDRANT,CACHE,DOCS,MEMORY data
+    class SETTINGS,LOGGER,HEALTH config
+    class CHUNKER,ANALYZER,METADATA,SCORER processing
 ```
 
 ### Architectural Decisions & Justifications
